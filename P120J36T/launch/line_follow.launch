@@ -1,0 +1,35 @@
+<!-- launch/line_follow.launch -->
+<launch>
+  <!-- Camera -->
+  <node pkg="jetracer_ros" type="camera_node.py" name="camera" output="screen">
+    <param name="width"  value="640"/>
+    <param name="height" value="480"/>
+    <param name="fps"    value="30"/>
+  </node>
+
+  <!-- Line detector -->
+  <node pkg="jetracer_line_follower" type="71N3_Detect.py" 
+        name="line_detector" output="screen"/>
+
+  <!-- PID Controller - tune Kp, Ki, Kd ở đây -->
+  <node pkg="jetracer_line_follower" type="60nT120ll312_Node.py"
+        name="controller" output="screen">
+    <param name="Kp"       value="0.6"/>
+    <param name="Ki"       value="0.01"/>
+    <param name="Kd"       value="0.15"/>
+    <param name="throttle" value="0.18"/>
+  </node>
+
+<node pkg="jetracer_line_follower" type="camera_node.py"
+      name="camera_node" output="screen">
+    <param name="camera_type"  value="CSI"/>
+    <param name="flip_method"  value="2"/>    <!-- xoay 180° nếu camera gắn ngược -->
+    <param name="width"        value="640"/>
+    <param name="height"       value="480"/>
+    <param name="fps"          value="30"/>
+</node>
+
+  <!-- Visualize debug (tùy chọn) -->
+  <node pkg="rqt_image_view" type="rqt_image_view" name="debug_view"
+        args="/line/debug_image"/>
+</launch>

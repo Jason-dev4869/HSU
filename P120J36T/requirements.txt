@@ -1,0 +1,43 @@
+# ──────────────────────────────────────────
+# JETRACER ROS LINE FOLLOWER — pip packages
+# Tested: Jetson Nano JetPack 4.6 / Ubuntu 20.04
+# Python: 3.8
+# ──────────────────────────────────────────
+
+# === Core math & image ===
+numpy>=1.19.5,<1.24.0          # 1.24+ có breaking change trên Jetson
+Pillow>=8.4.0
+
+# QUAN TRỌNG (Jetson): KHÔNG pip install opencv!
+# OpenCV đã được build sẵn với CUDA trong JetPack.
+# Chỉ cài nếu chạy trên máy thường (PC/laptop):
+# opencv-python>=4.5.5.64
+# Hoặc headless nếu không cần GUI:
+# opencv-python-headless>=4.5.5.64
+
+# === I2C / Hardware (PCA9685 servo controller) ===
+Adafruit-Blinka>=8.20.0          # HAL layer cho GPIO Jetson
+adafruit-circuitpython-pca9685>=3.4.0
+adafruit-circuitpython-servokit>=1.3.10
+smbus2>=0.4.2                    # I2C fallback
+
+# === JetRacer / car abstraction ===
+traitlets>=5.1.0                 # dependency của jetracer
+# Clone và install thủ công (xem install.sh bên dưới):
+# https://github.com/waveshare/jetracer   (Waveshare version)
+# https://github.com/NVIDIA-AI-IOT/jetracer (NVIDIA original)
+
+# === ROS Python bridge ===
+# Các gói ROS cài qua apt, KHÔNG qua pip
+# Nhưng một số utility dùng pip:
+rospkg>=1.5.0
+catkin-pkg>=0.5.2
+PyYAML>=5.4.1
+empy>=3.3.4                      # catkin build tool
+
+# === Debug & visualization ===
+matplotlib>=3.3.4
+pyserial>=3.5                    # serial debug nếu cần
+
+# === Utility ===
+tqdm>=4.62.0

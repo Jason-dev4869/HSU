@@ -1,0 +1,41 @@
+# ──────────────────────────────────────────
+# APT PACKAGES
+# Chạy: xargs sudo apt-get install -y < requirements_apt.txt
+# ──────────────────────────────────────────
+
+# === ROS Noetic (Ubuntu 20.04) ===
+# Đổi thành ros-melodic-* nếu dùng Ubuntu 18.04 / JetPack 4.5 trở xuống
+ros-noetic-desktop
+ros-noetic-cv-bridge
+ros-noetic-image-transport
+ros-noetic-camera-info-manager
+ros-noetic-usb-cam
+ros-noetic-rqt
+ros-noetic-rqt-image-view
+ros-noetic-rqt-graph
+ros-noetic-rviz
+python3-rosdep
+python3-rosinstall
+python3-rosinstall-generator
+python3-wstool
+python3-catkin-tools
+
+# === OpenCV với CUDA (Jetson — đã có trong JetPack) ===
+# Nếu cài trên PC Ubuntu không có JetPack:
+libopencv-dev
+python3-opencv
+
+# === I2C system tools ===
+i2c-tools
+libi2c-dev
+python3-smbus
+
+# === Camera ===
+v4l-utils
+libv4l-dev
+
+# === Build tools ===
+build-essential
+cmake
+python3-pip
+python3-dev
