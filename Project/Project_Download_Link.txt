@@ -1,0 +1,2 @@
+GitHub: https://github.com/Jason-dev4869/NLP_mNER_Demo_Project
+Google Drive (Đã có dữ liệu huấn luyện): https://drive.google.com/file/d/173kTLMcKOnVaxVIic2VSWB1E2u-NVCqE/view?usp=sharing
