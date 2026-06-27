@@ -1,0 +1,6 @@
+Article: Evolution and emerging trends of named entity recognition:
+Bibliometric analysis from 2000 to 2023
+
+Books:
+- Getting Started With Google BERT by Sudharsan Ravichandiran
+- Practical Natural Language Processing
