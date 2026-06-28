@@ -1,0 +1,17 @@
+Final Validation Dataset Results:
+ - Validation Loss:     0.2080
+ - Validation Accuracy: 92.74%
+
+Classification Report:
+                      precision    recall  f1-score   support
+
+   incorrect_mask_mc       0.88      0.95      0.91       500
+  incorrect_mask_mmc       0.91      0.86      0.89       500
+   with_mask_complex       0.87      0.76      0.81       158
+    with_mask_simple       0.93      0.97      0.95       800
+without_mask_complex       0.91      0.77      0.83       150
+ without_mask_simple       0.98      0.97      0.97       800
+
+            accuracy                           0.93      2908
+           macro avg       0.91      0.88      0.90      2908
+        weighted avg       0.93      0.93      0.93      2908
