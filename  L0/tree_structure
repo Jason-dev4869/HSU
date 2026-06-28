@@ -1,0 +1,12 @@
+digraph {
+	node [shape=circle]
+	A [fillcolor=lightyellow style=filled]
+	B [fillcolor=lightblue style=filled]
+	C [fillcolor=lightgreen style=filled]
+	D [fillcolor=lightpink style=filled]
+	E [fillcolor=lightcyan style=filled]
+	A -> B
+	A -> C
+	B -> D
+	B -> E
+}

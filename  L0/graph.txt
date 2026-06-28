@@ -1,0 +1,8 @@
+digraph MyGraph {
+	node [shape=circle]
+	A
+	B
+	C
+	A -> B
+	A -> C
+}

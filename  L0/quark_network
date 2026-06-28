@@ -1,0 +1,15 @@
+digraph {
+	node [shape=circle]
+	u [fillcolor=lightyellow style=filled]
+	d [fillcolor=lightblue style=filled]
+	s [fillcolor=lightgreen style=filled]
+	c [fillcolor=lightpink style=filled]
+	b [fillcolor=lightcyan style=filled]
+	t [fillcolor=lightgray style=filled]
+	u -> d [label="up-down"]
+	u -> s [label="up-strange"]
+	d -> s [label="down-strange"]
+	c -> b [label="charm-bottom"]
+	c -> t [label="charm-top"]
+	b -> t [label="bottom-top"]
+}

@@ -1,0 +1,15 @@
+
+digraph G {
+    node [shape=circle, style=filled];
+    A [fillcolor=lightyellow];
+    B [fillcolor=red];
+    C [fillcolor=lightblue];
+    D [fillcolor=lightgreen];
+    E [fillcolor=purple];
+    A -> B;
+    A -> C;
+    B -> D;
+    C -> D;
+    C -> E;
+    B -> E;
+}
