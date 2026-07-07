@@ -1,0 +1,15 @@
+<launch>
+  <!-- Camera CSI (theo tutorial JetRacer, override resolution khop dung sensor mode thuc te
+       - tutorial default 1920x1240 KHONG khop mode nao cua camera nay, gay loi nvbuf_utils) -->
+  <include file="$(find jetracer)/launch/csi_camera.launch">
+    <arg name="width" value="1920"/>
+    <arg name="height" value="1080"/>
+    <arg name="fps" value="30"/>
+  </include>
+
+  <!-- Lidar (RPLIDAR A1, dung config rieng cua jetracer: /dev/ttyACM1) -->
+  <include file="$(find jetracer)/launch/lidar.launch"/>
+
+  <!-- Node chassis: nhận /cmd_vel, điều khiển motor + servo lái thật -->
+  <include file="$(find jetracer)/launch/jetracer.launch"/>
+</launch>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>JetRacer Monitor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/roslibjs/1.1.0/roslib.min.js"></script>
+<style>
+  body { background:#111; color:#eee; font-family: -apple-system, sans-serif; margin:0; padding:16px; }
+  h1 { font-size:18px; margin:0 0 12px; }
+  .row { display:flex; gap:16px; flex-wrap:wrap; }
+  .panel { background:#1b1b1f; border-radius:10px; padding:12px; }
+  #cam-wrap { position:relative; width:480px; }
+  #cam-wrap img { width:480px; border-radius:8px; display:block; background:#000; }
+  #overlay { position:absolute; top:0; left:0; width:480px; pointer-events:none; }
+  .stat-grid { display:grid; grid-template-columns: 140px 1fr; gap:6px 10px; font-size:14px; min-width:260px; }
+  .stat-grid .label { color:#888; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:12px; font-weight:600; font-size:13px; }
+  .badge.tracking { background:#1b5e20; color:#a5d6a7; }
+  .badge.searching { background:#5d4037; color:#ffccbc; }
+  .badge.obstacle { background:#b71c1c; color:#ffcdd2; }
+  .badge.clear { background:#1b3a5d; color:#90caf9; }
+  #lidar-canvas { background:#000; border-radius:8px; }
+  #conn { font-size:13px; }
+  #conn.ok { color:#81c784; }
+  #conn.bad { color:#e57373; }
+</style>
+</head>
+<body>
+  <h1>JetRacer Monitor &nbsp; <span id="conn" class="bad">đang kết nối...</span></h1>
+  <div class="row">
+
+    <div class="panel" id="cam-wrap">
+      <img id="cam" src="">
+      <canvas id="overlay" width="480" height="270"></canvas>
+    </div>
+
+    <div class="panel">
+      <div class="stat-grid">
+        <div class="label">Trạng thái</div><div><span id="state-badge" class="badge searching">SEARCHING</span></div>
+        <div class="label">Người đang theo</div><div id="target-name">--</div>
+        <div class="label">Số người thấy</div><div id="num-det">0</div>
+        <div class="label">Steering</div><div id="steer">0.00 rad</div>
+        <div class="label">Speed</div><div id="speed">0.00 m/s</div>
+        <div class="label">LiDAR</div><div><span id="lidar-badge" class="badge clear">CLEAR</span></div>
+        <div class="label">Khoảng cách gần nhất</div><div id="lidar-dist">--</div>
+        <div class="label">Cập nhật gần nhất</div><div id="last-update">--</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <canvas id="lidar-canvas" width="280" height="280"></canvas>
+    </div>
+
+  </div>
+
+<script>
+// ===== SỬA IP JETSON Ở ĐÂY =====
+const JETSON_IP = "192.168.43.155";  // <-- doi thanh IP thuc te cua Jetson
+// ================================
+
+document.getElementById('cam').src = `http://${JETSON_IP}:8080/stream?topic=/csi_cam_0/image_raw&type=mjpeg&quality=50`;
+
+const ros = new ROSLIB.Ros({ url: `ws://${JETSON_IP}:9090` });
+const connEl = document.getElementById('conn');
+ros.on('connection', () => { connEl.textContent = 'đã kết nối'; connEl.className = 'ok'; });
+ros.on('error', () => { connEl.textContent = 'lỗi kết nối'; connEl.className = 'bad'; });
+ros.on('close', () => { connEl.textContent = 'mất kết nối'; connEl.className = 'bad'; });
+
+const overlay = document.getElementById('overlay');
+const octx = overlay.getContext('2d');
+
+const debugTopic = new ROSLIB.Topic({ ros, name: '/follow_debug', messageType: 'std_msgs/String' });
+debugTopic.subscribe((msg) => {
+  const d = JSON.parse(msg.data);
+
+  const stateBadge = document.getElementById('state-badge');
+  stateBadge.textContent = d.state;
+  stateBadge.className = 'badge ' + (d.state === 'TRACKING' ? 'tracking' : 'searching');
+
+  document.getElementById('target-name').textContent = d.target_name || '--';
+  document.getElementById('num-det').textContent = d.num_detections;
+  document.getElementById('steer').textContent = d.steer.toFixed(3) + ' rad';
+  document.getElementById('speed').textContent = d.speed.toFixed(3) + ' m/s';
+
+  const lidarBadge = document.getElementById('lidar-badge');
+  lidarBadge.textContent = d.lidar_obstacle ? 'VẬT CẢN' : 'CLEAR';
+  lidarBadge.className = 'badge ' + (d.lidar_obstacle ? 'obstacle' : 'clear');
+  document.getElementById('lidar-dist').textContent = d.lidar_min_dist !== null
+    ? d.lidar_min_dist.toFixed(2) + ' m' : '--';
+
+  document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+
+  // ve bbox overlay (scale tu kich thuoc anh thuc te xuong 480x270 hien thi)
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  if (d.bbox && d.img_w && d.img_h) {
+    const sx = overlay.width / d.img_w;
+    const sy = overlay.height / d.img_h;
+    const [x1, y1, x2, y2] = d.bbox;
+    octx.strokeStyle = '#4caf50';
+    octx.lineWidth = 3;
+    octx.strokeRect(x1 * sx, y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
+    octx.fillStyle = '#4caf50';
+    octx.font = '14px sans-serif';
+    octx.fillText(d.target_name || 'target', x1 * sx, Math.max(14, y1 * sy - 4));
+  }
+});
+
+// ===== LiDAR radar view don gian =====
+const lcanvas = document.getElementById('lidar-canvas');
+const lctx = lcanvas.getContext('2d');
+const scanTopic = new ROSLIB.Topic({ ros, name: '/scan', messageType: 'sensor_msgs/LaserScan' });
+scanTopic.subscribe((msg) => {
+  const cx = lcanvas.width / 2, cy = lcanvas.height / 2;
+  const maxR = Math.min(cx, cy) - 10;
+  const maxDist = 3.0; // met, hien thi toi da 3m quanh xe
+
+  lctx.fillStyle = '#000';
+  lctx.fillRect(0, 0, lcanvas.width, lcanvas.height);
+
+  // vong tron tham chieu
+  lctx.strokeStyle = '#333';
+  [1, 2, 3].forEach(m => {
+    lctx.beginPath();
+    lctx.arc(cx, cy, (m / maxDist) * maxR, 0, 2 * Math.PI);
+    lctx.stroke();
+  });
+
+  // xe (tam)
+  lctx.fillStyle = '#4caf50';
+  lctx.beginPath(); lctx.arc(cx, cy, 4, 0, 2 * Math.PI); lctx.fill();
+
+  // diem quet
+  lctx.fillStyle = '#2196f3';
+  for (let i = 0; i < msg.ranges.length; i++) {
+    const r = msg.ranges[i];
+    if (!isFinite(r) || r <= 0.01 || r > maxDist) continue;
+    const angle = msg.angle_min + i * msg.angle_increment;
+    // quy uoc: 0 rad = phia truoc xe (huong len tren canvas)
+    const px = cx + Math.sin(angle) * (r / maxDist) * maxR;
+    const py = cy - Math.cos(angle) * (r / maxDist) * maxR;
+    lctx.fillRect(px - 1, py - 1, 2, 2);
+  }
+});
+</script>
+</body>
+</html>

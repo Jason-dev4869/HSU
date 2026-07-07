@@ -1,0 +1,278 @@
+================================================================
+LOG QUÁ TRÌNH PHÁT TRIỂN - ĐỒ ÁN HUMAN_FOLLOWING (JetRacer ROS AI Kit)
+================================================================
+Phần cứng: Jetson Nano 4GB (JetPack 4.5.1, L4T 32.5.2, CUDA 10.2, TensorRT 7.1.3)
+           RPLIDAR A1M8, CSI Camera, JetRacer chassis (Ackermann steering)
+Phần mềm: ROS Melodic, Python 3.6 (Jetson) / Python mới hơn (PC đăng ký mặt)
+
+================================================================
+GIAI ĐOẠN 1 — THIẾT KẾ PIPELINE BAN ĐẦU
+================================================================
+- Mục tiêu: JetRacer tự động theo người (person-following) + né vật cản.
+- Pipeline gốc đề xuất:
+    PC: đăng ký khuôn mặt (InsightFace) -> xuất faces.pkl
+    JetRacer: Camera -> YOLO-tiny detect person -> so khớp face với faces.pkl
+              -> bám theo người -> LiDAR né vật cản
+- Quyết định kiến trúc: 3 lớp nhận diện người
+    Lớp 1: Face-ID (khi mới phát hiện / mất track) — lock đúng người đã đăng ký
+    Lớp 2: IoU tracking (giữa các frame liên tiếp) — rẻ, không cần chạy lại face-id
+    Lớp 3: HSV histogram fallback — tái nhận diện khi mất IoU match
+
+================================================================
+GIAI ĐOẠN 2 — DỰNG HẠ TẦNG ROS (camera, lidar, chassis)
+================================================================
+Lỗi & nguyên nhân:
+1. GSCAM_CONFIG conflict — vừa có env var vừa có rosparam cùng tên -> sửa: bỏ env var
+   trùng trong ~/.bashrc, chỉ giữ 1 nguồn cấu hình.
+2. csi_camera.launch của package "jetracer" KHÔNG dùng cho camera thật (camera thực tế
+   nằm ở package "jetson_csi_cam", launch file riêng "jetson_csi_cam.launch").
+3. Bug trong jetson_csi_cam.launch: dùng <env name="gscam_config".../> (env var thường,
+   tên SAI case so với "GSCAM_CONFIG" mà gscam node yêu cầu) thay vì <param>. Sửa:
+   đổi thành <param name="$(arg cam_name)/gscam_config" type="string" .../>.
+4. Plugin GStreamer "nvcamerasrc" (cũ) không tồn tại trên JetPack 4.5.1 — phải đổi
+   sang "nvarguscamerasrc" + format NV12 (thay I420).
+5. Lỗi "nvbuf_utils: Can not get HW buffer from FD" / "Failed to create CaptureSession"
+   — lỗi tầng thấp NVMM buffer, không phải lỗi cấu hình resolution/mode. Test cô lập
+   bằng gst-launch-1.0 thuần xác nhận lỗi độc lập khỏi ROS. GIẢI PHÁP DUY NHẤT HIỆU
+   QUẢ: POWER CYCLE THẬT (rút điện hẳn, không phải `sudo reboot` phần mềm) — soft
+   reboot không dọn sạch được trạng thái ISP/firmware camera bị kẹt.
+6. resolution 1920x1240 (default tutorial) KHÔNG khớp bất kỳ sensor mode thật nào của
+   camera (chỉ có: 3264x2464, 3264x1848, 1920x1080, 1640x1232, 1280x720@60/120) —
+   buộc Argus tự ép vào mode gần nhất, dễ kích hoạt lại lỗi buffer. Sửa: override
+   width/height khớp đúng 1 sensor mode thật (1920x1080 hoặc 1280x720).
+7. flip-method sai (ảnh bị lật ngược 180°) — sửa flip-method=0 đúng theo hướng lắp
+   camera thật.
+8. RPLIDAR "buffer overflow" / SIGSEGV — ban đầu nghi do baudrate/model sai, sau xác
+   nhận: nguyên nhân thật là dùng SAI launch file (rplidar_ros gốc trỏ /dev/ttyUSB0,
+   không tồn tại) thay vì launch riêng của package "jetracer"
+   (jetracer/launch/lidar.launch, đúng cổng /dev/ttyACM1). Đổi đúng launch -> hết lỗi.
+9. Crash đồng thời nhiều node lúc khởi động cùng lúc (camera + rosbridge + InsightFace
+   load model...) gây CPU burst, làm Argus timeout khi đang mở camera. Giải pháp: tách
+   2 launch file riêng (01_sensors.launch: camera/lidar/chassis chạy trước, đợi ổn
+   định; 02_follow_and_dashboard.launch: các node nặng chạy sau), gói trong script
+   start_human_following.sh chạy lệch nhau theo thời gian.
+
+================================================================
+GIAI ĐOẠN 3 — DASHBOARD WEB QUAN SÁT (debug observability)
+================================================================
+- Cần quan sát trực quan vì không có cách nào khác để biết YOLO/face-id/LiDAR có thật
+  sự hoạt động hay không.
+- Dùng rosbridge_server (WebSocket :9090) + web_video_server (HTTP MJPEG :8080) +
+  1 file HTML/JS (roslibjs) tự viết, hiển thị: camera trực tiếp + bbox người, trạng
+  thái SEARCHING/TRACKING, steer/speed, LiDAR radar view.
+- Node tự publish thêm topic /follow_debug (JSON qua std_msgs/String) chứa toàn bộ
+  thông tin debug cần thiết.
+
+================================================================
+GIAI ĐOẠN 4 — YOLO PERSON DETECTION (rất nhiều vòng lặp debug)
+================================================================
+1. YOLOv4-tiny + cv2.dnn cho confidence = 0.0 TUYỆT ĐỐI ở MỌI class, MỌI cell.
+   Nguyên nhân thật: OpenCV 4.1.1 (JetPack) RA ĐỜI TRƯỚC YOLOv4 (4/2020) ~1 năm —
+   không hiểu kiến trúc CSP/route-with-groups của YOLOv4(-tiny), parse "thành công"
+   về cú pháp nhưng tính sai hoàn toàn giá trị qua các layer.
+   -> GIẢI PHÁP: đổi hẳn sang YOLOv3-tiny (kiến trúc cũ hơn, không dùng CSP/groups,
+   OpenCV 4.1.1 hỗ trợ đầy đủ, đã verify bằng script test_yolo_standalone.py độc lập
+   khỏi ROS).
+2. Sau khi đổi sang YOLOv3-tiny: nhiều lần "không detect được người" hoá ra do:
+   - Ảnh test là ảnh cận mặt/mờ (motion blur), không phải lỗi model.
+   - Threshold 0.5 quá cao cho YOLOv3-tiny (kém chính xác hơn v4-tiny) -> hạ xuống 0.25.
+   - File cfg bị tải nhầm version (mismatch với master branch) -> xác nhận lại cfg+
+     weights đi cùng 1 cặp chính thức từ release của AlexeyAB/darknet.
+3. SIGSEGV khi face-id (InsightFace/onnxruntime) lần đầu thực sự được gọi cùng lúc
+   với YOLO (cv2.dnn) — do tranh chấp thread OpenMP/OpenBLAS trên CPU 4-core. Sửa:
+   set OMP_NUM_THREADS=1, OPENBLAS_NUM_THREADS=1, cv2.setNumThreads(1).
+
+================================================================
+GIAI ĐOẠN 5 — FACE-ID & DỮ LIỆU PC <-> JETSON
+================================================================
+1. faces.pkl tạo trên PC dùng numpy/pickle protocol MỚI (protocol 5, Python 3.8+)
+   -> Jetson Python 3.6 chỉ đọc tới protocol 4 -> lỗi "unsupported pickle protocol: 5".
+   Sửa: pickle.dump(..., protocol=4) khi lưu trên PC.
+2. Sau khi sửa protocol vẫn lỗi "ModuleNotFoundError: numpy._core" — do PC dùng
+   numpy >= 2.0 (đổi tên module nội bộ numpy.core -> numpy._core), Jetson dùng numpy
+   rất cũ (1.13/1.18), không hiểu cấu trúc pickle mới của numpy 2.x.
+   Sửa TRIỆT ĐỂ: lưu embedding dưới dạng list Python thuần (.tolist()) trong file
+   faces.pkl, convert lại thành np.array() lúc load trên Jetson — loại bỏ hoàn toàn
+   phụ thuộc vào version numpy giữa 2 máy.
+3. Đổi model InsightFace từ mặc định (buffalo_l, nặng) sang buffalo_sc (nhẹ, phù hợp
+   Jetson Nano) — PHẢI đồng bộ cùng model ở cả PC (lúc train) và Jetson (lúc nhận
+   diện), nếu không 2 embedding không cùng không gian vector, so sánh cosine vô nghĩa.
+
+================================================================
+GIAI ĐOẠN 6 — KIẾN TRÚC: TÁCH FILE ĐỂ TEST CÁCH LY
+================================================================
+- Quyết định: tách manfollow_avoidobj.py (file gộp) thành 2 file độc lập để chứng
+  minh từng phần hoạt động đúng TRƯỚC khi gộp lại:
+    lidar_avoidobj.py — chỉ test LiDAR + né vật cản, không dùng camera/YOLO.
+    cam_manfollow.py  — chỉ test Camera+YOLO+follow, LiDAR chỉ dùng giữ khoảng cách.
+- Đơn giản hoá: bỏ yêu cầu khớp khuôn mặt bắt buộc lúc lock (USE_FACE_ID=False),
+  chuyển sang "theo người gần nhất" (bbox lớn nhất) — giảm hẳn 1 lớp thất bại
+  (không cần cả YOLO và InsightFace cùng thành công mới lock được).
+
+================================================================
+GIAI ĐOẠN 7 — ACKERMANN STEERING & TUNING ĐIỀU KHIỂN
+================================================================
+1. Phát hiện: JetRacer là xe kiểu ACKERMANN (bánh trước đánh lái), KHÔNG xoay tại chỗ
+   được như xe 2 bánh differential drive. Lệnh né vật cản ban đầu (speed=0 kèm
+   angular≠0) hoàn toàn KHÔNG làm xe di chuyển/quay được gì — phải luôn kèm linear.x
+   khác 0 (tiến/lùi) cùng góc lái, quy đổi qua đúng công thức Ackermann:
+       R = WHEELBASE / tan(delta);  angular_z = linear_speed / R
+2. Giữ khoảng cách với người: ban đầu dùng tỉ lệ chiều cao bbox/ảnh để suy ra khoảng
+   cách — RẤT KÉM CHÍNH XÁC (vì threshold confidence thấp buộc người phải đứng gần
+   mới detect ổn định, khiến hệ thống tưởng "đã quá gần" ngay từ lúc mới thấy người).
+   Sửa TRIỆT ĐỂ: bỏ hẳn bbox-height, dùng khoảng cách LiDAR THẬT (mét) để giữ khoảng
+   cách; vision (bbox) chỉ dùng để LÁI (căn giữa theo trục x).
+3. Bug lùi không hoạt động: code dùng "speed = min(speed, 0.0)" để "chặn tiến nhưng
+   cho phép lùi" — nhưng min() với số âm luôn trả về số âm -> KHÔNG hề chặn được
+   trường hợp cần lùi, chỉ tình cờ không gây lỗi rõ ràng. Sửa: tách rõ 2 nhánh
+   if speed<0 (đang lùi, check an toàn phía SAU) / else (đang tiến, check an toàn
+   phía TRƯỚC).
+4. Thêm logic né vật cản phía SAU: LidarGuard mở rộng quét thêm vùng ~180° (REAR_
+   HALF_ANGLE_DEG), chặn lùi nếu phía sau cũng có vật cản gần (REAR_SAFE_DIST).
+5. Lỗi blind-spot LiDAR: RPLIDAR A1 có vùng mù khi vật quá gần (~15-20cm), LiDAR báo
+   "inf" (không thấy gì) y hệt trường hợp "không thấy gì vì xa" — code mặc định coi
+   là "xa" và TIẾN thêm (ngược hẳn ý muốn, dễ đâm vào người/vật). Sửa: nhớ giá trị
+   khoảng cách hợp lệ gần nhất trước đó; nếu vừa rất gần (< SAFE_STOP_DIST) rồi đột
+   ngột báo inf -> hiểu đúng là vùng mù do quá gần -> chủ động lùi nhẹ.
+6. Tuning servo/lái (overshoot — "rẽ lố"):
+   - STEER_DEADBAND: 0.08 -> 0.12 (giảm lái vặt do nhiễu bbox khi đứng gần)
+   - STEER_GAIN: 0.6 -> 0.45 -> 0.32 (giảm độ nhạy lái theo offset)
+   - Thêm TURN_SLOWDOWN_RATIO: tự giảm tốc độ khi đang đánh lái gắt, giảm overshoot
+     vì ít quãng đường di chuyển hơn mỗi lệnh lúc rẽ.
+   - Vẫn còn lố sau khi giảm hết các gain phía trên -> nghi vấn hệ số PWM nội bộ của
+     chassis driver "jetracer" nhạy hơn lý thuyết Ackermann giả định. Thêm
+     SERVO_ANGULAR_SCALE = hệ số scale cuối cùng (thực nghiệm, độc lập mọi gain khác)
+     ngay trước khi publish /cmd_vel, chỉnh dò bằng tay tới khi servo vừa ý.
+7. Hành vi khi mất track (SEARCHING): thử nghiệm "tiến + đánh lái về hướng cuối cùng
+   thấy người" -> THẤT BẠI vì recovery dùng full steer angle, kết hợp tần suất mất
+   track ban đầu cao (do IOU_MATCH_THRESHOLD quá chặt: 0.30) khiến robot liên tục rơi
+   vào recovery, nhìn như "rẽ trái chạy luôn" dù người đứng ngay trước mặt. Sửa:
+   (a) nới IOU_MATCH_THRESHOLD 0.30->0.20, LOST_FRAMES_LIMIT 8->15 (giảm tần suất mất
+   track giả); (b) đổi hẳn recovery thành LÙI THẲNG (không đánh lái) về vị trí cũ,
+   có check an toàn phía sau, tự dừng sau N frame nếu không tìm lại được.
+8. Thử thêm "dự đoán motion" (lead control cho lái dựa vận tốc offset + PD damping
+   cho khoảng cách dựa vận tốc thay đổi khoảng cách) -> LÀM XẤU ĐI độ ổn định đã có
+   (phản hồi người dùng: "code trước còn ổn, sang đây thì lại bị lệch"). QUYẾT ĐỊNH:
+   revert hoàn toàn về bản proportional thuần (không dự đoán), giữ đúng các tuning đã
+   xác nhận tốt trước đó. Bài học: thêm độ phức tạp không đảm bảo cải thiện nếu hệ
+   thống nền đã đủ ổn định — ưu tiên đơn giản, dễ kiểm chứng.
+9. Thêm "tốc độ tự điều chỉnh theo góc lái" (TURN_SLOWDOWN_RATIO) — khác với (8) vì
+   đây không phải dự đoán, chỉ là quy tắc tỉ lệ đơn giản (góc lái lớn -> tốc độ giảm
+   theo tỉ lệ cố định), không gây mất ổn định, được giữ lại.
+10. Chốt khoảng cách bám: TARGET_FOLLOW_DIST=0.45m, FOLLOW_DEADBAND=0.15m -> vùng
+    dừng thực tế 0.30m-0.60m theo đúng yêu cầu cuối cùng. MAX_SPEED=0.3 m/s tiến,
+    MIN_SPEED=-0.30 m/s lùi (cân bằng, không lệch quá tốc tiến/lùi).
+
+================================================================
+GIAI ĐOẠN 8 — TỐI ƯU HIỆU NĂNG: TENSORRT
+================================================================
+Mục tiêu: thay cv2.dnn (CPU-only, vì OpenCV 4.1.1 không build kèm CUDA cho module dnn)
+bằng TensorRT (chạy thẳng GPU), dùng repo cộng đồng jkjung-avt/tensorrt_demos (đã
+test rộng rãi trên đúng Jetson Nano + YOLOv3-tiny) để giảm rủi ro so với tự viết
+converter Darknet->ONNX->TensorRT từ đầu.
+
+Chuỗi lỗi gặp phải (mỗi lỗi là 1 tầng dependency khác nhau):
+1. pip install pycuda lỗi build numpy 1.12.1 (do pip tự pin numpy cũ cho Python 3.6
+   trong build-isolation, thiếu header hệ thống mới như xlocale.h).
+   -> Sửa: pip install --no-build-isolation (dùng numpy hệ thống sẵn có).
+2. pycuda build lỗi "cuda.h: No such file" — nvcc/CUDA include path không nằm trong
+   PATH mặc định. Sửa: export PATH/CUDA_INC_DIR/LD_LIBRARY_PATH trỏ đúng
+   /usr/local/cuda (CUDA 10.2).
+3. Lỗi Makefile của plugins/ (custom YOLO layer CUDA kernel): cú pháp
+   "$(shell grep ... '#define ...')" có dấu # nằm trong lệnh shell bị Make hiểu nhầm
+   thành bắt đầu comment, cắt mất phần còn lại dòng lệnh -> "missing ')'".
+   Sửa: dùng biến trung gian HASH:=\# để escape đúng cách (kỹ thuật chuẩn GNU Make).
+4. yolo_to_onnx.py báo lỗi "file not found" — do chưa copy cfg/weights vào đúng thư
+   mục yolo/ của repo trước khi convert.
+5. onnx_to_tensorrt.py lỗi AttributeError: 'Builder' object has no attribute
+   'build_serialized_network' — do TensorRT máy thật là bản 7.1.3, nhưng code mẫu
+   viết cho API TensorRT 8.x. Sửa: dùng đúng API 7.x (builder.build_engine() trả
+   engine trực tiếp, không cần qua bước serialize/deserialize riêng).
+6. Build TensorRT engine CRASH với "Cuda Error 702: the launch timed out and was
+   terminated" — nguyên nhân: Xorg/GUI desktop áp watchdog timeout cho mỗi GPU kernel
+   launch (vài giây), nhưng việc build TensorRT (dò tìm kernel tối ưu cho từng layer)
+   cần chạy GPU lâu hơn ngưỡng đó trên GPU yếu (Maxwell 128 core). Sửa: tắt hẳn GUI
+   (sudo systemctl set-default multi-user.target + reboot), build ở chế độ console
+   thuần (headless) -> hết bị watchdog kill.
+7. Lỗi tích hợp PersonDetector dùng TensorRT vào ROS node:
+   - Plugin .so load theo đường dẫn TƯƠNG ĐỐI ngay lúc IMPORT module (không phải lúc
+     khởi tạo class) -> phải os.chdir() vào đúng thư mục tensorrt_demos/ TRƯỚC dòng
+     import, không phải trong __init__.
+   - CUDA context không dùng được giữa các thread khác nhau (ROS callback chạy thread
+     riêng, khác thread import pycuda.autoinit) -> tự tạo context thủ công
+     (cuda.Device(0).make_context()), truyền vào TrtYOLO(cuda_ctx=...) để class tự
+     push()/pop() đúng lúc, không dùng pycuda.autoinit.
+   - Race condition lúc Ctrl-C: rospy.on_shutdown() pop context cùng lúc image_cb
+     đang xử lý frame cuối (cũng tự push/pop bên trong) -> 2 bên giành pop, 1 bên
+     gặp stack rỗng -> crash. Sửa: thêm cờ self._shutting_down chặn callback mới,
+     time.sleep(0.3) đợi callback đang chạy xong trước khi pop context thật.
+- KẾT QUẢ: TensorRT hoạt động đúng, confidence detect ổn định (0.25-0.71 nhiều lần
+  liên tục trong phiên test ~3 phút), CPU rảnh hẳn ra so với cv2.dnn.
+
+================================================================
+GIAI ĐOẠN 9 — GỘP FILE CUỐI CÙNG: manfollow_avoidobj.py
+================================================================
+- Sau khi cam_manfollow.py (TensorRT) và lidar_avoidobj.py (Ackermann avoid) đều đã
+  test ổn định riêng lẻ, gộp lại với bài toán mới: 2 logic lái (CĂN GIỮA người vs NÉ
+  VẬT CẢN) tranh nhau quyền điều khiển servo lái khi cả 2 cùng kích hoạt.
+- Giải pháp ưu tiên: ước lượng GÓC (bearing) của vật cản gần nhất qua LiDAR, so sánh
+  với góc ước lượng của người (từ offset camera, giả định camera/LiDAR cùng hướng
+  phía trước). Lệch góc nhiều (> ALIGN_TOLERANCE_DEG=20°) -> vật cản KHÁC người đang
+  theo (bàn, tường...) -> ưu tiên NÉ (override cả lái và tốc độ). Lệch ít -> coi là
+  CHÍNH người đang theo -> giữ logic theo người cũ (an toàn khoảng cách tự xử lý
+  dừng/lùi, không cần né lái thêm).
+- Quyết định phạm vi: khi SEARCHING (mất track), KHÔNG kích hoạt hành vi "tự lái đi
+  dò vật cản" (CRUISE) của lidar_avoidobj — vì đó là hành vi tự khám phá khi không có
+  người để theo, không phù hợp lúc đang cố lùi tìm lại 1 người cụ thể.
+- Cập nhật launch: 02_follow_and_dashboard.launch dùng node "manfollow_avoidobj" với
+  param trt_model_name (không còn yolo_cfg/yolo_weights như bản cv2.dnn cũ).
+
+================================================================
+GIAI ĐOẠN 10 — THỬ NGHIỆM FACE-ID, QUYẾT ĐỊNH CUỐI
+================================================================
+- Bật thử USE_FACE_ID=True để kiểm chứng tính năng (đã sẵn trong code, tắt mặc định).
+- Phát hiện: face match không bao giờ vượt FACE_SIM_THRESHOLD ở khoảng cách bám gần
+  (0.3-0.6m) — khoảng cách này tối ưu cho tracking camera nhưng không tối ưu cho face
+  recognition (mặt quá gần, dễ méo/cắt khung).
+- Quyết định cuối: giữ USE_FACE_ID=False (theo người gần nhất) làm chế độ chính thức
+  cho demo/báo cáo — đã test kỹ, ổn định. Module Face-ID vẫn giữ nguyên trong code,
+  có thể bật lại bất kỳ lúc nào cho demo riêng minh hoạ tính năng phân biệt người.
+
+================================================================
+KIẾN TRÚC CUỐI CÙNG (manfollow_avoidobj.py)
+================================================================
+[Camera] --> YOLOv3-tiny (TensorRT, GPU) --> bbox người
+   --> Lock người GẦN NHẤT (bbox lớn nhất) lúc SEARCHING
+   --> IoU tracking + HSV fallback lúc TRACKING
+[LiDAR] --> Giữ khoảng cách 0.30-0.60m với người (proportional control)
+        --> Phân biệt vật cản KHÁC người (qua bearing) -> né khi cần
+        --> Né vật cản phía SAU trước khi cho phép lùi
+        --> Phát hiện & xử lý đúng vùng mù LiDAR khi quá gần
+[Steering] --> Ackermann thật (R=WHEELBASE/tan(delta)), deadband + gain đã tune,
+              tốc độ tự giảm khi rẽ gắt, scale thực nghiệm cuối cho servo, low-pass
+              filter làm mượt toàn bộ lệnh.
+[Recovery] --> Mất track: lùi thẳng về vị trí cũ (không tự lái đi tìm), có check an
+              toàn phía sau, tự dừng sau thời gian giới hạn.
+[Dashboard] --> Web (rosbridge + web_video_server), quan sát trực tiếp camera, bbox,
+               trạng thái, mode (FOLLOW_PERSON/AVOID_OBSTACLE/SEARCH_RECOVERY/IDLE),
+               khoảng cách LiDAR.
+
+================================================================
+HẠN CHẾ ĐÃ BIẾT (ghi nhận cho báo cáo)
+================================================================
+1. LiDAR 2D đơn tầng chỉ quét 1 mặt phẳng ngang cố định — không thấy được vật cản
+   thấp hơn độ cao lắp đặt (chân ghế, chân bàn...). Đã giảm thiểu một phần bằng
+   SAFETY_MARGIN (tăng sớm khoảng cách phản ứng) nhưng không loại bỏ hoàn toàn được
+   hạn chế vật lý này. Hướng giải quyết triệt để (chưa làm): thêm cảm biến phụ (siêu
+   âm/IR) gắn thấp hơn, qua vi điều khiển phụ (Arduino) đọc rồi gửi Serial lên Jetson.
+2. Face-ID chỉ kiểm tra lúc lock lần đầu, không xác nhận lại liên tục lúc đang
+   TRACKING — nếu lock nhầm người khác giữa đường (do IoU/HSV), hệ thống không tự
+   phát hiện ra.
+3. Khi 2 người đứng cùng khoảng cách (bbox diện tích bằng nhau), việc chọn ai để
+   theo là KHÔNG XÁC ĐỊNH TRƯỚC (phụ thuộc thứ tự ngẫu nhiên trong danh sách
+   detection sau NMS) — chấp nhận là hành vi biết trước, không xử lý thêm.
+4. OpenCV 4.1.1 (JetPack apt) không build kèm CUDA cho module dnn — đã chuyển hẳn
+   qua TensorRT nên không còn ảnh hưởng, nhưng nếu cần build OpenCV+CUDA cho mục
+   đích khác vẫn cần build từ source (3-6 giờ, chưa thực hiện).
+5. SERVO_ANGULAR_SCALE là hệ số dò bằng thực nghiệm (không có công thức tính sẵn
+   chính xác) vì không biết được hệ số PWM nội bộ thật của chassis driver "jetracer".

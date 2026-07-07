@@ -1,0 +1,25 @@
+<launch>
+  <!-- Camera CSI -->
+  <include file="$(find jetson_csi_cam)/jetson_csi_cam.launch"/>
+
+  <!-- Lidar (RPLIDAR A1, dung config rieng cua jetracer: /dev/ttyACM1) -->
+  <include file="$(find jetracer)/launch/lidar.launch"/>
+
+  <!-- Node chassis: nhận /cmd_vel, điều khiển motor + servo lái thật -->
+  <include file="$(find jetracer)/launch/jetracer.launch"/>
+
+  <!-- Node person-following của bạn -->
+  <!-- launch-prefix: cho camera/lidar/chassis on dinh truoc, roi moi load model YOLO+InsightFace
+       (load model rat ton CPU dot ngot, de gay Argus timeout cho camera neu chay dong thoi) -->
+  <node name="jetracer_follow_node" pkg="human_following" type="manfollow_avoidobj.py" output="screen"
+        launch-prefix="bash -c 'sleep 8; $0 $@'">
+    <env name="PYTHONUNBUFFERED" value="1"/>
+    <param name="face_db" value="$(find human_following)/faces.pkl"/>
+    <param name="yolo_cfg" value="$(find human_following)/models/yolov3-tiny.cfg"/>
+    <param name="yolo_weights" value="$(find human_following)/models/yolov3-tiny.weights"/>
+  </node>
+
+  <!-- Web dashboard: rosbridge (websocket port 9090) cho du lieu, web_video_server (http port 8080) cho camera -->
+  <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch"/>
+  <node name="web_video_server" pkg="web_video_server" type="web_video_server" output="screen"/>
+</launch>

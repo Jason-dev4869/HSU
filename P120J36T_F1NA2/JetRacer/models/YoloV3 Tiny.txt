@@ -1,0 +1,10 @@
+YoloV3 Tiny
+
+cd ~/catkin_ws/src/human_following/models/
+
+cfg (file cấu hình, ~2KB):
+wget https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov3-tiny.cfg
+
+weights (pre-trained COCO, ~34MB):
+wget https://pjreddie.com/media/files/yolov3-tiny.weights
+(Hugging Face Link trong trường hợp khó tải qua git: wget https://huggingface.co/spaces/VipulS/Ytest/resolve/main/yolov3-tiny.weights)

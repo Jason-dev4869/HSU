@@ -1,0 +1,12 @@
+<launch>
+  <!-- Ban gop hoan chinh: Camera+YOLO(TensorRT) follow + LiDAR obstacle avoidance -->
+  <node name="manfollow_avoidobj" pkg="human_following" type="manfollow_avoidobj.py" output="screen">
+    <env name="PYTHONUNBUFFERED" value="1"/>
+    <param name="face_db" value="$(find human_following)/faces.pkl"/>
+    <param name="trt_model_name" value="yolov3-tiny"/>
+  </node>
+
+  <!-- Web dashboard: rosbridge (websocket port 9090) cho du lieu, web_video_server (http port 8080) cho camera -->
+  <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch"/>
+  <node name="web_video_server" pkg="web_video_server" type="web_video_server" output="screen"/>
+</launch>
