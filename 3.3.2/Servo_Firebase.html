@@ -1,0 +1,38 @@
+<html>
+<head>
+  <script type='module'>
+    // init firebase
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    import { getDatabase, ref, child, onValue, set } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+    const config = { databaseURL: 'https://servo-f0e85-default-rtdb.asia-southeast1.firebasedatabase.app/' };
+    initializeApp(config);
+    const dbRef = ref(getDatabase());
+    // event-handler methods
+    window.page_Load = function page_Load() {
+      onValue(child(dbRef, 'SERVO'), (snapshot) => {
+        snapshot.forEach((child) => {
+          if (child.key === 'value') {
+            document.getElementById('lblValue').innerText = child.val();
+          }
+        });
+      });
+    }
+    window.btnUpDown_Click = function btnUpDown_Click() {
+      const v = 1 - parseInt(document.getElementById('lblValue').innerText);
+      set(child(dbRef, 'SERVO'), { value: v });
+    }
+  </script>
+</head>
+<body onload='page_Load()'>
+  <table cellspacing='10'>
+    <tr>
+      <td colspan='3'>SERVO</td>
+    </tr>
+    <tr>
+      <td>+ Value:</td>
+      <td><span id='lblValue'></span></td>
+      <td><button onclick='btnUpDown_Click()'>UP / DOWN</button></td>
+    </tr>
+  </table>
+</body>
+</html>

@@ -1,0 +1,59 @@
+<html>
+<head>
+  <script src='https://unpkg.com/mqtt/dist/mqtt.min.js'></script>
+  <script>
+    const MQTT_NAME = 'Led_MTTQ';
+    const topicR = MQTT_NAME + '/LEDs/R';
+    const topicG = MQTT_NAME + '/LEDs/G';
+    const topicB = MQTT_NAME + '/LEDs/B';
+    // connect to HiveMQ broker using WebSocket
+    const mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+    mqttClient.on('connect', function () {
+      mqttClient.subscribe(topicR);
+      mqttClient.subscribe(topicG);
+      mqttClient.subscribe(topicB);
+    });
+    mqttClient.on('message', function (topic, message) {
+      const msg = message.toString();
+      if (topic === topicR) document.getElementById('lblRed').innerText = msg;
+      if (topic === topicG) document.getElementById('lblGreen').innerText = msg;
+      if (topic === topicB) document.getElementById('lblBlue').innerText = msg;
+    });
+    // event-handler methods
+    window.btnRed_Click = function btnRed_Click() {
+      const r = 1 - parseInt(document.getElementById('lblRed').innerText);
+      mqttClient.publish(topicR, String(r));
+    }
+    window.btnGreen_Click = function btnGreen_Click() {
+      const g = 1 - parseInt(document.getElementById('lblGreen').innerText);
+      mqttClient.publish(topicG, String(g));
+    }
+    window.btnBlue_Click = function btnBlue_Click() {
+      const b = 1 - parseInt(document.getElementById('lblBlue').innerText);
+      mqttClient.publish(topicB, String(b));
+    }
+  </script>
+</head>
+<body>
+  <table cellspacing='10'>
+    <tr>
+      <td colspan='3'>LEDs</td>
+    </tr>
+    <tr>
+      <td>+ Red:</td>
+      <td><span id='lblRed'>0</span></td>
+      <td><button onclick='btnRed_Click()'>ON / OFF</button></td>
+    </tr>
+    <tr>
+      <td>+ Green:</td>
+      <td><span id='lblGreen'>0</span></td>
+      <td><button onclick='btnGreen_Click()'>ON / OFF</button></td>
+    </tr>
+    <tr>
+      <td>+ Blue:</td>
+      <td><span id='lblBlue'>0</span></td>
+      <td><button onclick='btnBlue_Click()'>ON / OFF</button></td>
+    </tr>
+  </table>
+</body>
+</html>

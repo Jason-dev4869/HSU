@@ -1,0 +1,38 @@
+<html>
+<head>
+  <script type='module'>
+    // init firebase
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    import { getDatabase, ref, child, onValue, set } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+    const config = { databaseURL: 'https://relay-motor-default-rtdb.asia-southeast1.firebasedatabase.app/' };
+    initializeApp(config);
+    const dbRef = ref(getDatabase());
+    // event-handler methods
+    window.page_Load = function page_Load() {
+      onValue(child(dbRef, 'MOTOR'), (snapshot) => {
+        snapshot.forEach((child) => {
+          if (child.key === 'value') {
+            document.getElementById('lblValue').innerText = child.val();
+          }
+        });
+      });
+    }
+    window.btnOnOff_Click = function btnOnOff_Click() {
+      const v = 1 - parseInt(document.getElementById('lblValue').innerText);
+      set(child(dbRef, 'MOTOR'), { value: v });
+    }
+  </script>
+</head>
+<body onload='page_Load()'>
+  <table cellspacing='10'>
+    <tr>
+      <td colspan='3'>MOTOR</td>
+    </tr>
+    <tr>
+      <td>+ Value:</td>
+      <td><span id='lblValue'></span></td>
+      <td><button onclick='btnOnOff_Click()'>ON / OFF</button></td>
+    </tr>
+  </table>
+</body>
+</html>
