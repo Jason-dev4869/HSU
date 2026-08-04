@@ -1,0 +1,41 @@
+<html>
+<head>
+  <script type='module'>
+    // init firebase
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    import { getDatabase, ref, child, onValue, set } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+    const config = { databaseURL: 'https://lightsensor-ab9ca-default-rtdb.asia-southeast1.firebasedatabase.app/' };
+    initializeApp(config);
+    const dbRef = ref(getDatabase());
+    // event-handler methods
+    window.page_Load = function page_Load() {
+      onValue(child(dbRef, 'LIGHT'), (snapshot) => {
+        snapshot.forEach((child) => {
+          if (child.key === 'value') {
+            document.getElementById('lblValue').innerText = child.val();
+          }
+          if (child.key === 'updated') {
+            const epochTime = child.val() * 1000; // milliseconds
+            document.getElementById('lblUpdated').innerText = new Date(epochTime).toLocaleString();
+          }
+        });
+      });
+    }
+  </script>
+</head>
+<body onload='page_Load()'>
+  <table cellspacing='10'>
+    <tr>
+      <td colspan='2'>LIGHT sensor</td>
+    </tr>
+    <tr>
+      <td>+ Value:</td>
+      <td><span id='lblValue'></span></td>
+    </tr>
+    <tr>
+      <td>+ Updated:</td>
+      <td><span id='lblUpdated'></span></td>
+    </tr>
+  </table>
+</body>
+</html>

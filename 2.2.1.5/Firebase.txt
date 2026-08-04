@@ -1,0 +1,2 @@
+Firebase URL: https://lightsensor-ab9ca-default-rtdb.asia-southeast1.firebasedatabase.app/
+Database Secret: x5UX80bEwfTGgaaOfJbxUvie38aUIC48p6liqwEt

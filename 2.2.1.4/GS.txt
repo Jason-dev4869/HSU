@@ -1,0 +1,8 @@
+Deployment ID: AKfycbzYLCe-u4Aa_K1z7p9q8E1vP8K2AtOP4fvUPx5LvfsRwaQsZPxXy-0-ustZpRCoRLHi
+
+Web app URL: https://script.google.com/macros/s/AKfycbzYLCe-u4Aa_K1z7p9q8E1vP8K2AtOP4fvUPx5LvfsRwaQsZPxXy-0-ustZpRCoRLHi/exec
+
+Google Script ID: 1LbK06_N8nRxjh0s30vpDk-nZ9QjmxLImQ0kkLRm3XZ-o8672mUlfvo9Y
+https://script.google.com/macros/s/1LbK06_N8nRxjh0s30vpDk-nZ9QjmxLImQ0kkLRm3XZ-o8672mUlfvo9Y/exec
+
+Testing:https://script.google.com/macros/s/AKfycbzYLCe-u4Aa_K1z7p9q8E1vP8K2AtOP4fvUPx5LvfsRwaQsZPxXy-0-ustZpRCoRLHi/exec?value=1&updated=123456

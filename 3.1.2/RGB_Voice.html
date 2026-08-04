@@ -1,0 +1,106 @@
+<html>
+<head>
+  <script type='module'>
+    // init firebase
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    import { getDatabase, ref, child, onValue, set } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+    const config = { databaseURL: 'https://rgb-led-5ffce-default-rtdb.asia-southeast1.firebasedatabase.app/' };
+    initializeApp(config);
+    const dbRef = ref(getDatabase());
+    // event-handler methods
+    window.page_Load = function page_Load() {
+      listenFirebase();
+      initSpeechRecognition();
+    }
+    // helper methods
+    function listenFirebase() {
+      onValue(child(dbRef, 'LEDs'), (snapshot) => {
+        snapshot.forEach((child) => {
+          if (child.key === 'R') document.getElementById('lblRed').innerText = child.val();
+          if (child.key === 'G') document.getElementById('lblGreen').innerText = child.val();
+          if (child.key === 'B') document.getElementById('lblBlue').innerText = child.val();
+        });
+      });
+    }
+    function initSpeechRecognition() {
+      const btnStart = document.getElementById('btnStart');
+      const lblCommand = document.getElementById('lblCommand');
+      const recognition = new webkitSpeechRecognition() || new SpeechRecognition();
+      recognition.lang = 'vi-VN'; // 'en-US'
+      recognition.interimResults = true;
+      recognition.continuous = false;
+      btnStart.addEventListener('click', () => {
+        recognition.start();
+        btnStart.disabled = true;
+        btnStart.textContent = 'Recording ........';
+        lblCommand.textContent = '';
+      });
+      recognition.onresult = (event) => {
+        const result = event.results[event.results.length - 1][0].transcript;
+        lblCommand.textContent = result;
+      };
+      recognition.onend = () => {
+        btnStart.disabled = false;
+        btnStart.textContent = 'Voice command';
+        parseCommand(lblCommand.textContent.toLowerCase());
+      };
+      recognition.onerror = (event) => {
+        console.error("Speech recognition error");
+        console.error("error:", event.error);
+        console.error("message:", event.message);
+        console.error("event:", event);
+      };
+      recognition.onnomatch = () => {
+        console.log('No speech was recognized.');
+      };
+    }
+    function parseCommand(cmd) {
+      if (cmd.includes('đèn') && cmd.includes('đỏ')) {
+        let r = 0;
+        if (cmd.includes('bật') || cmd.includes('mở')) r = 1;
+        else if (cmd.includes('tắt')) r = 0;
+        const g = parseInt(document.getElementById('lblGreen').innerText);
+        const b = parseInt(document.getElementById('lblBlue').innerText);
+        set(child(dbRef, 'LEDs'), { R: r, G: g, B: b });
+      } else if (cmd.includes('đèn') && cmd.includes('xanh lá')) {
+        let g = 0;
+        if (cmd.includes('bật') || cmd.includes('mở')) g = 1;
+        else if (cmd.includes('tắt')) g = 0;
+        const r = parseInt(document.getElementById('lblRed').innerText);
+        const b = parseInt(document.getElementById('lblBlue').innerText);
+        set(child(dbRef, 'LEDs'), { R: r, G: g, B: b });
+      } else if (cmd.includes('đèn') && cmd.includes('xanh dương')) {
+        let b = 0;
+        if (cmd.includes('bật') || cmd.includes('mở')) b = 1;
+        else if (cmd.includes('tắt')) b = 0;
+        const r = parseInt(document.getElementById('lblRed').innerText);
+        const g = parseInt(document.getElementById('lblGreen').innerText);
+        set(child(dbRef, 'LEDs'), { R: r, G: g, B: b });
+      }
+    }
+  </script>
+</head>
+<body onload='page_Load()'>
+  <table cellspacing='10'>
+    <tr>
+      <td colspan='2'>LEDs</td>
+    </tr>
+    <tr>
+      <td>+ Red:</td>
+      <td><span id='lblRed'></span></td>
+    </tr>
+    <tr>
+      <td>+ Green:</td>
+      <td><span id='lblGreen'></span></td>
+    </tr>
+    <tr>
+      <td>+ Blue:</td>
+      <td><span id='lblBlue'></span></td>
+    </tr>
+    <tr>
+      <td><button id='btnStart'>Voice command</button></td>
+      <td><span id='lblCommand'></span></td>
+    </tr>
+  </table>
+</body>
+</html>

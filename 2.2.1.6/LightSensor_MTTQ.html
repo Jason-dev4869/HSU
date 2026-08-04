@@ -1,0 +1,39 @@
+<html>
+<head>
+  <script src='https://unpkg.com/mqtt/dist/mqtt.min.js'></script>
+  <script>
+    const MQTT_NAME = 'LightSensor_MTTQ';
+    const topicValue = MQTT_NAME + '/LIGHT/value';
+    const topicUpdated = MQTT_NAME + '/LIGHT/updated';
+    // connect to HiveMQ broker using WebSocket
+    const mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+    mqttClient.on('connect', function () {
+      mqttClient.subscribe(topicValue);
+      mqttClient.subscribe(topicUpdated);
+    });
+    mqttClient.on('message', function (topic, message) {
+      const msg = message.toString();
+      if (topic === topicValue) document.getElementById('lblValue').innerText = msg;
+      if (topic === topicUpdated) {
+        const epochTime = parseInt(msg) * 1000; // milliseconds
+        document.getElementById('lblUpdated').innerText = new Date(epochTime).toLocaleString();
+      }
+    });
+  </script>
+</head>
+<body>
+  <table cellspacing='10'>
+    <tr>
+      <td colspan='2'>LIGHT sensor</td>
+    </tr>
+    <tr>
+      <td>+ Value:</td>
+      <td><span id='lblValue'></span></td>
+    </tr>
+    <tr>
+      <td>+ Updated:</td>
+      <td><span id='lblUpdated'></span></td>
+    </tr>
+  </table>
+</body>
+</html>
